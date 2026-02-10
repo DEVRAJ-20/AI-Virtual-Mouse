@@ -1,49 +1,57 @@
+// =======================
+// Python ↔ JS bridge
+// =======================
 
-//user clicked button
+// Function to display messages from Python (AI assistant)
+function addAppMsg(msg) {
+    const element = document.getElementById("messages");
+    element.innerHTML += '<div class="message to ready ltor">' + msg + '</div>';
+    element.scrollTop = element.scrollHeight - element.clientHeight - 15;
+    const index = element.childElementCount - 1;
+    setTimeout(changeClass.bind(null, element, index, "message to"), 500);
+}
+
+// Function to display user messages
+function addUserMsg(msg) {
+    const element = document.getElementById("messages");
+    element.innerHTML += '<div class="message from ready rtol">' + msg + '</div>';
+    element.scrollTop = element.scrollHeight - element.clientHeight - 15;
+    const index = element.childElementCount - 1;
+    setTimeout(changeClass.bind(null, element, index, "message from"), 500);
+}
+
+// Helper function to change class after animation
+function changeClass(element, index, newClass) {
+    console.log(newClass + ' ' + index);
+    element.children[index].className = newClass;
+}
+
+// Expose these functions so Python can call them
+eel.expose(addAppMsg);
+eel.expose(addUserMsg);
+
+
+// =======================
+// User input handling
+// =======================
+
+// Send message when user clicks button
 document.getElementById("userInputButton").addEventListener("click", getUserInput, false);
-//user pressed enter '13'
+
+// Send message when user presses Enter key (keyCode 13)
 document.getElementById("userInput").addEventListener("keyup", function (event) {
     if (event.keyCode === 13) {
-        //cancel the default action
         event.preventDefault();
-        //process event
         getUserInput();
     }
 });
 
-eel.expose(addUserMsg);
-eel.expose(addAppMsg);
-
-
-function addUserMsg(msg) {
-    element = document.getElementById("messages");
-    element.innerHTML += '<div class="message from ready rtol">' + msg + '</div>';
-    element.scrollTop = element.scrollHeight - element.clientHeight - 15;
-    //add delay for animation to complete and then modify class to => "message from"
-    index = element.childElementCount - 1;
-    setTimeout(changeClass.bind(null, element, index, "message from"), 500);
-}
-
-function addAppMsg(msg) {
-    element = document.getElementById("messages");
-    element.innerHTML += '<div class="message to ready ltor">' + msg + '</div>';
-    element.scrollTop = element.scrollHeight - element.clientHeight - 15;
-    //add delay for animation to complete and then modify class to => "message to"
-    index = element.childElementCount - 1;
-    setTimeout(changeClass.bind(null, element, index, "message to"), 500);
-}
-
-function changeClass(element, index, newClass) {
-    console.log(newClass +' '+ index);
-    element.children[index].className = newClass;
-}
-
-
+// Function to send user input to Python
 function getUserInput() {
-    element = document.getElementById("userInput");
-    msg = element.value;
-    if (msg.length != 0) {
+    const element = document.getElementById("userInput");
+    const msg = element.value.trim();
+    if (msg.length !== 0) {
         element.value = "";
-        eel.getUserInput(msg);
+        eel.getUserInput(msg);  // Sends message to Python
     }
 }

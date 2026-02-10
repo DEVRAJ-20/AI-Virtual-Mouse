@@ -18,7 +18,6 @@ from threading import Thread
 today = date.today()
 r = sr.Recognizer()
 keyboard = Controller()
-engine = pyttsx3.init('sapi5')
 engine = pyttsx3.init()
 voices = engine.getProperty('voices')
 engine.setProperty('voice', voices[0].id)
