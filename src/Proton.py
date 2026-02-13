@@ -8,6 +8,8 @@ from pynput.keyboard import Key, Controller
 import pyautogui
 import sys
 import os
+import platform
+import subprocess
 from os import listdir
 from os.path import isfile, join
 import smtplib
@@ -18,19 +20,30 @@ from threading import Thread
 today = date.today()
 r = sr.Recognizer()
 keyboard = Controller()
-engine = pyttsx3.init()
-voices = engine.getProperty('voices')
-engine.setProperty('voice', voices[0].id)
+
+# TTS setup — use macOS native 'say' command to avoid pyttsx3 hanging
+IS_MAC = platform.system() == 'Darwin'
+if not IS_MAC:
+    engine = pyttsx3.init()
+    voices = engine.getProperty('voices')
+    engine.setProperty('voice', voices[0].id)
+
 file_exp_status = False
 files =[]
 path = ''
 is_awake = True  
 def reply(audio):
     app.ChatBot.addAppMsg(audio)
-
     print(audio)
-    engine.say(audio)
-    engine.runAndWait()
+    try:
+        if IS_MAC:
+            # Use macOS native 'say' — non-blocking, no hang
+            subprocess.Popen(['say', audio])
+        else:
+            engine.say(audio)
+            engine.runAndWait()
+    except Exception as e:
+        print(f"TTS error: {e}")
 
 
 def wish():
@@ -45,36 +58,44 @@ def wish():
         
     reply("I am Proton, how may I help you?")
 
-with sr.Microphone() as source:
-        r.energy_threshold = 500 
-        r.dynamic_energy_threshold = False
+r.energy_threshold = 500
+r.dynamic_energy_threshold = False
+
+mic_available = True
 
 def record_audio():
-    with sr.Microphone() as source:
-        r.pause_threshold = 0.8
-        voice_data = ''
-        audio = r.listen(source, phrase_time_limit=5)
+    global mic_available
+    if not mic_available:
+        return None  # Signal to wait for text input
+    try:
+        with sr.Microphone() as source:
+            r.pause_threshold = 0.8
+            voice_data = ''
+            audio = r.listen(source, phrase_time_limit=5)
 
-        try:
-            voice_data = r.recognize_google(audio)
-        except sr.RequestError:
-            reply('Sorry my Service is down. Plz check your Internet connection')
-        except sr.UnknownValueError:
-            print('cant recognize')
-            pass
-        return voice_data.lower()
+            try:
+                voice_data = r.recognize_google(audio)
+            except sr.RequestError:
+                reply('Sorry my Service is down. Plz check your Internet connection')
+            except sr.UnknownValueError:
+                pass
+            return voice_data.lower()
+    except (AttributeError, OSError) as e:
+        print(f"Microphone not available: {e}")
+        print("Switching to text-only mode. Use the chat window.")
+        mic_available = False
+        return None
 
 def respond(voice_data):
     global file_exp_status, files, is_awake, path
     print(voice_data)
-    voice_data.replace('proton','')
-    app.eel.addUserMsg(voice_data)
+    voice_data = voice_data.replace('proton','').strip()
 
     if is_awake==False:
         if 'wake up' in voice_data:
             is_awake = True
             wish()
-    elif 'hello' in voice_data:
+    elif 'hello' in voice_data or 'hi' in voice_data:
         wish()
 
     elif 'what is your name' in voice_data:
@@ -95,17 +116,22 @@ def respond(voice_data):
         except:
             reply('Please check your Internet')
 
-    elif 'location' in voice_data:
-        reply('Which place are you looking for ?')
-        temp_audio = record_audio()
-        app.eel.addUserMsg(temp_audio)
-        reply('Locating...')
-        url = 'https://google.nl/maps/place/' + temp_audio + '/&amp;'
-        try:
-            webbrowser.get().open(url)
-            reply('This is what I found Sir')
-        except:
-            reply('Please check your Internet')
+    elif 'location' in voice_data or 'find' in voice_data:
+        # Extract location from the command text
+        location = voice_data
+        for word in ['location', 'find', 'a', 'the']:
+            location = location.replace(word, '')
+        location = location.strip()
+        if location:
+            reply(f'Locating {location}...')
+            url = 'https://google.com/maps/place/' + location
+            try:
+                webbrowser.get().open(url)
+                reply('This is what I found Sir')
+            except:
+                reply('Please check your Internet')
+        else:
+            reply('Please specify a location, e.g.: proton find location Mumbai')
 
     elif ('bye' in voice_data) or ('by' in voice_data):
         reply("Good bye Sir! Have a nice day.")
@@ -135,20 +161,22 @@ def respond(voice_data):
             reply('Gesture recognition is already inactive')
         
     elif 'copy' in voice_data:
-        with keyboard.pressed(Key.ctrl):
+        _mod_key = Key.cmd if platform.system() == 'Darwin' else Key.ctrl
+        with keyboard.pressed(_mod_key):
             keyboard.press('c')
             keyboard.release('c')
         reply('Copied')
           
     elif 'page' in voice_data or 'pest'  in voice_data or 'paste' in voice_data:
-        with keyboard.pressed(Key.ctrl):
+        _mod_key = Key.cmd if platform.system() == 'Darwin' else Key.ctrl
+        with keyboard.pressed(_mod_key):
             keyboard.press('v')
             keyboard.release('v')
         reply('Pasted')
         
     elif 'list' in voice_data:
         counter = 0
-        path = 'C://'
+        path = os.path.expanduser('~')
         files = listdir(path)
         filestr = ""
         for f in files:
@@ -163,7 +191,13 @@ def respond(voice_data):
         counter = 0   
         if 'open' in voice_data:
             if isfile(join(path,files[int(voice_data.split(' ')[-1])-1])):
-                os.startfile(path + files[int(voice_data.split(' ')[-1])-1])
+                filepath = os.path.join(path, files[int(voice_data.split(' ')[-1])-1])
+                if platform.system() == 'Darwin':
+                    subprocess.Popen(['open', filepath])
+                elif platform.system() == 'Windows':
+                    os.startfile(filepath)
+                else:
+                    subprocess.Popen(['xdg-open', filepath])
                 file_exp_status = False
             else:
                 try:
@@ -182,12 +216,11 @@ def respond(voice_data):
                                     
         if 'back' in voice_data:
             filestr = ""
-            if path == 'C://':
+            home = os.path.expanduser('~')
+            if path == home or path == home + os.sep:
                 reply('Sorry, this is the root directory')
             else:
-                a = path.split('//')[:-2]
-                path = '//'.join(a)
-                path += '//'
+                path = os.path.dirname(os.path.normpath(path)) + os.sep
                 files = listdir(path)
                 for f in files:
                     counter+=1
@@ -212,15 +245,17 @@ while True:
         voice_data = app.ChatBot.popUserInput()
     else:
         voice_data = record_audio()
+        if voice_data is None:
+            # Mic unavailable — wait for text input
+            time.sleep(0.5)
+            continue
 
-    if 'proton' in voice_data:
+    if voice_data and 'proton' in voice_data:
         try:
             respond(voice_data)
         except SystemExit:
-            reply("Exit Successfull")
+            reply("Exit Successful")
             break
-        except:
-            print("EXCEPTION raised while closing.") 
+        except Exception as e:
+            print(f"Error: {e}")
             break
-        
-

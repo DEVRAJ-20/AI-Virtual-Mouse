@@ -1,24 +1,12 @@
 import eel
 import os
-import platform
-import socket
+import sys
 from queue import Queue
-import pyttsx3
-import webbrowser
 
 class ChatBot:
 
     started = False
     userinputQueue = Queue()
-
-    @staticmethod
-    def get_free_port():
-        """Find a free port automatically"""
-        s = socket.socket()
-        s.bind(('', 0))
-        port = s.getsockname()[1]
-        s.close()
-        return port
 
     @staticmethod
     @eel.expose
@@ -28,63 +16,53 @@ class ChatBot:
         print("User:", msg)
 
     @staticmethod
+    def isUserInput():
+        """Check if there is user input waiting in the queue"""
+        return not ChatBot.userinputQueue.empty()
+
+    @staticmethod
+    def popUserInput():
+        """Pop the next user input from the queue"""
+        return ChatBot.userinputQueue.get()
+
+    @staticmethod
     def addAppMsg(msg):
         """Send a message to frontend"""
         try:
             eel.addAppMsg(msg)
-        except AttributeError:
+        except Exception:
             print("APP:", msg)
 
     @staticmethod
+    def close():
+        """Gracefully shut down the Eel app"""
+        try:
+            sys.exit(0)
+        except SystemExit:
+            pass
+
+    @staticmethod
     def start():
-        # -------------------------------
-        # Set web folder path
-        # -------------------------------
         path = os.path.dirname(os.path.abspath(__file__))  # src/
         web_folder = os.path.abspath(os.path.join(path, '..', 'web'))
         print("Eel web folder:", web_folder)
         eel.init(web_folder, allowed_extensions=['.js', '.html'])
 
-        # -------------------------------
-        # Pick a free port
-        # -------------------------------
-        port = ChatBot.get_free_port()
-        url = f"http://127.0.0.1:{port}/index.html"
+        # Mark as started BEFORE blocking call (this runs in a thread)
+        ChatBot.started = True
 
-        # -------------------------------
-        # Start Eel server
-        # -------------------------------
         try:
-            # Open in default browser
-            webbrowser.open(url)
-
-            # Start Eel (blocking mode)
+            # mode='default' lets Eel open the default browser
+            # block=True keeps this thread alive to serve requests
             eel.start(
                 'index.html',
-                mode=None,   # default browser
+                mode='default',
                 host='127.0.0.1',
-                port=port,
+                port=8000,
                 block=True
             )
-
         except Exception as e:
             print("Eel error:", e)
-
-        # -------------------------------
-        # TTS greeting after Eel starts
-        # -------------------------------
-        try:
-            if platform.system() == "Windows":
-                engine = pyttsx3.init("sapi5")
-            else:
-                engine = pyttsx3.init()  # macOS / Linux auto-select
-
-            greeting = "Hello! I am your AI assistant."
-            engine.say(greeting)
-            engine.runAndWait()
-            ChatBot.addAppMsg(greeting)
-        except Exception as e:
-            print("TTS error:", e)
 
 
 if __name__ == "__main__":

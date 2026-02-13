@@ -1,5 +1,9 @@
 import platform
+import subprocess
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="google.protobuf")
 IS_WINDOWS = platform.system() == "Windows"
+IS_MAC = platform.system() == "Darwin"
 
 import cv2
 import mediapipe as mp
@@ -162,7 +166,7 @@ class HandRecog:
             try:
                 ratio = round(dist/dist2,1)
             except:
-                ratio = round(dist1/0.01,1)
+                ratio = round(dist/0.01,1)
 
             self.finger = self.finger << 1
             if ratio > 0.5 :
@@ -217,6 +221,7 @@ class HandRecog:
             self.ori_gesture = current_gesture
         return self.ori_gesture
 
+class Controller:
     """
     Executes commands according to detected gestures.
 
@@ -287,26 +292,52 @@ class HandRecog:
     
     def changesystembrightness():
         """sets system brightness based on 'Controller.pinchlv'."""
-        currentBrightnessLv = sbcontrol.get_brightness(display=0)/100.0
-        currentBrightnessLv += Controller.pinchlv/50.0
-        if currentBrightnessLv > 1.0:
-            currentBrightnessLv = 1.0
-        elif currentBrightnessLv < 0.0:
-            currentBrightnessLv = 0.0       
-        sbcontrol.fade_brightness(int(100*currentBrightnessLv) , start = sbcontrol.get_brightness(display=0))
+        if IS_MAC:
+            # Use key code simulation to show native macOS brightness HUD
+            # Key code 144 = brightness up, 145 = brightness down
+            steps = int(abs(Controller.pinchlv) * 2)
+            if steps < 1:
+                steps = 1
+            key_code = 144 if Controller.pinchlv > 0 else 145
+            for _ in range(steps):
+                subprocess.run(
+                    ['osascript', '-e', f'tell application "System Events" to key code {key_code}'],
+                    capture_output=True, text=True
+                )
+        else:
+            currentBrightnessLv = sbcontrol.get_brightness(display=0)/100.0
+            currentBrightnessLv += Controller.pinchlv/50.0
+            if currentBrightnessLv > 1.0:
+                currentBrightnessLv = 1.0
+            elif currentBrightnessLv < 0.0:
+                currentBrightnessLv = 0.0       
+            sbcontrol.fade_brightness(int(100*currentBrightnessLv) , start = sbcontrol.get_brightness(display=0))
     
     def changesystemvolume():
         """sets system volume based on 'Controller.pinchlv'."""
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        volume = cast(interface, POINTER(IAudioEndpointVolume))
-        currentVolumeLv = volume.GetMasterVolumeLevelScalar()
-        currentVolumeLv += Controller.pinchlv/50.0
-        if currentVolumeLv > 1.0:
-            currentVolumeLv = 1.0
-        elif currentVolumeLv < 0.0:
-            currentVolumeLv = 0.0
-        volume.SetMasterVolumeLevelScalar(currentVolumeLv, None)
+        if IS_MAC:
+            # Use key code simulation to show native macOS volume HUD
+            # Key code 72 = volume up, 73 = volume down
+            steps = int(abs(Controller.pinchlv) * 2)
+            if steps < 1:
+                steps = 1
+            key_code = 72 if Controller.pinchlv > 0 else 73
+            for _ in range(steps):
+                subprocess.run(
+                    ['osascript', '-e', f'tell application "System Events" to key code {key_code}'],
+                    capture_output=True, text=True
+                )
+        elif IS_WINDOWS:
+            devices = AudioUtilities.GetSpeakers()
+            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            volume = cast(interface, POINTER(IAudioEndpointVolume))
+            currentVolumeLv = volume.GetMasterVolumeLevelScalar()
+            currentVolumeLv += Controller.pinchlv/50.0
+            if currentVolumeLv > 1.0:
+                currentVolumeLv = 1.0
+            elif currentVolumeLv < 0.0:
+                currentVolumeLv = 0.0
+            volume.SetMasterVolumeLevelScalar(currentVolumeLv, None)
     
     def scrollVertical():
         """scrolls on screen vertically."""
@@ -504,8 +535,14 @@ class GestureController:
         """Initilaizes attributes."""
         GestureController.gc_mode = 1
         GestureController.cap = cv2.VideoCapture(0)
+        if not GestureController.cap.isOpened():
+            print("ERROR: Cannot open camera. Check camera permissions:")
+            print("  System Settings → Privacy & Security → Camera → enable Terminal")
+            GestureController.gc_mode = 0
+            return
         GestureController.CAM_HEIGHT = GestureController.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
         GestureController.CAM_WIDTH = GestureController.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        print(f"Camera opened: {int(GestureController.CAM_WIDTH)}x{int(GestureController.CAM_HEIGHT)}")
     
     def classify_hands(results):
         """
@@ -546,6 +583,10 @@ class GestureController:
         controlling.
         """
         
+        if not GestureController.gc_mode:
+            return
+        
+        print("Gesture Controller started. Press Enter in the camera window to stop.")
         handmajor = HandRecog(HLabel.MAJOR)
         handminor = HandRecog(HLabel.MINOR)
 
@@ -583,9 +624,13 @@ class GestureController:
                         mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
                 else:
                     Controller.prev_hand = None
-                cv2.imshow('Gesture Controller', image)
-                if cv2.waitKey(5) & 0xFF == 13:
-                    break
+                try:
+                    cv2.imshow('Gesture Controller', image)
+                    if cv2.waitKey(5) & 0xFF == 13:
+                        break
+                except Exception:
+                    pass  # cv2.imshow may fail in background threads on macOS
         GestureController.cap.release()
         cv2.destroyAllWindows()
+        print("Gesture Controller stopped.")
 

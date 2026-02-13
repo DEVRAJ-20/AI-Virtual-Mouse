@@ -23,7 +23,7 @@ class Marker:
         objpoints = [] 
         imgpoints = [] 
         path = os.path.dirname(os.path.abspath(__file__))
-        p1 = path + r'\calib_images\checkerboard\*.jpg'
+        p1 = os.path.join(path, 'calib_images', 'checkerboard', '*.jpg')
         images = glob.glob(p1)
         for fname in images:
             img = cv2.imread(fname)
@@ -205,7 +205,8 @@ class ROI:
         
         self.hsv_glove = find_HSV([[r,g,b]])
         self.hsv_corners =  [(bot_lx,bot_ly), (bot_rx,bot_ry), (top_rx,top_ry), (top_lx,top_ly)]
-         def cropROI(self, frame):
+
+    def cropROI(self, frame):
         pts = np.array(self.roi_corners)
         
         rect = cv2.boundingRect(pts)
